@@ -1,23 +1,16 @@
-#include <WiFi.h>
+#include <WiFi.h>  
 #include <ArduinoGPTChat.h>
 #include "Audio.h"
 #include "ESP_I2S.h"
-#include <TFT_eSPI.h>
-#include "simfang16.h"
-#include <WebServer.h>
-#include <SPIFFS.h>
 
 // 定义I2S引脚（用于音频输出）
-#define I2S_DOUT D2
-#define I2S_BCLK D1
-#define I2S_LRC D0
+#define I2S_DOUT 45
+#define I2S_BCLK 48
+#define I2S_LRC 47
 
 // 定义麦克风输入引脚
 #define MIC_DATA_PIN 42
 #define MIC_CLOCK_PIN 41
-
-// 定义触摸按键引脚
-#define TOUCH_PIN D7
 
 // 定义录音时长（秒）
 #define RECORDING_DURATION  8
@@ -29,25 +22,24 @@ const char* password = "xbotpark";
 // OpenAI API密钥
 const char* apiKey = "sk-CkxIb6MfdTBgZkdm0MtUEGVGk6Q6o5X5BRB1DwE2BdeSLSqB";  
 
+// 不再创建全局I2S实例，将在录音函数内创建局部实例
+
 // 全局声明audio变量，用于TTS播放
 Audio audio;
-
-// 初始化TFT显示屏
-TFT_eSPI tft = TFT_eSPI();
 
 // 初始化ArduinoGPTChat实例
 ArduinoGPTChat gptChat(apiKey);
 
 // 状态标志
-bool isRecording = false;
-bool lastTouchState = false;
+bool gettingResponse = false;
+bool recordingMode = false;
 
 void setup() {
   // 初始化串口
   Serial.begin(115200);
   delay(1000); // 给串口一些时间来初始化
   
-  Serial.println("\n\n----- 触摸语音助手系统启动 -----");
+  Serial.println("\n\n----- 语音助手系统启动 -----");
   
   // 连接WiFi网络
   WiFi.mode(WIFI_STA);
@@ -71,20 +63,12 @@ void setup() {
     // 设置音量
     audio.setVolume(100);
     
-    // 设置触摸引脚为输入
-    pinMode(TOUCH_PIN, INPUT);
-    
-    // 初始化TFT显示屏
-    tft.init();
-    tft.loadFont(simfang16); 
-    tft.setRotation(1); // 根据屏幕方向调整
-    tft.fillScreen(TFT_BLACK);
-    tft.setTextColor(TFT_WHITE, TFT_BLACK);
-    tft.setTextSize(2);
-    tft.drawString("触摸状态监测", 30, 20);
+    // 不再需要在这里设置麦克风引脚，将在录音函数中设置
     
     Serial.println("\n----- 系统就绪 -----");
-    Serial.println("按下触摸键开始录音，松开停止并发送给AI");
+    Serial.println("1. 输入文本直接与ChatGPT对话");
+    Serial.println("2. 输入'TTS:文本内容'进行语音合成");
+    Serial.println("3. 输入'RECORD'开始语音录制并识别");
   } else {
     Serial.println("\n连接WiFi失败。请检查网络凭据并重试。");
   }
@@ -94,38 +78,40 @@ void loop() {
   // 处理音频循环（TTS播放）
   audio.loop();
   
-  // 读取触摸状态
-  bool currentTouchState = !digitalRead(TOUCH_PIN);
-  
-  // 检测触摸状态变化
-  if (currentTouchState && !lastTouchState) {
-    // 触摸按下 - 开始录音
-    startRecording();
-    isRecording = true;
-    Serial.println("开始录音...");
-  } else if (!currentTouchState && lastTouchState && isRecording) {
-    // 触摸释放 - 停止录音并处理
-    isRecording = false;
-    Serial.println("录音结束，处理中...");
+  // 处理串口命令
+  if (Serial.available() > 0) {
+    String command = Serial.readStringUntil('\n');
+    command.trim();
+    
+    if (command.length() > 0) {
+      if (command == "RECORD") {
+        // 开始语音录制和识别
+        startRecordingAndTranscription();
+      } else if (command.startsWith("TTS:")) {
+        // 文本转语音命令
+        String ttsText = command.substring(4);
+        ttsText.trim();
+        if (ttsText.length() > 0) {
+          ttsCall(ttsText);
+        } else {
+          Serial.println("TTS文本为空。请使用'TTS:你的文本'格式");
+        }
+      } else {
+        // 普通文本作为ChatGPT输入
+        Serial.print("用户: ");
+        Serial.println(command);
+        chatGptCall(command);
+      }
+    }
   }
-  
-  lastTouchState = currentTouchState;
-  
-  // 在屏幕上显示触摸状态
-  tft.fillRect(0, 40, tft.width(), 40, TFT_BLACK);
-  tft.setCursor(30, 40);
-  tft.print("状态: ");
-  tft.print(currentTouchState ? "按住录音" : "等待");
   
   delay(10); // 小延迟以防止CPU过载
 }
 
 // 开始录音并将识别结果发送给ChatGPT
-void startRecording() {
-  // 在开始录音前快速更新屏幕
-  tft.fillRect(0, 60, tft.width(), 20, TFT_BLACK);
-  tft.setCursor(60, 60);
-  tft.print("Recording...");
+void startRecordingAndTranscription() {
+  Serial.println("\n----- 开始录音 -----");
+  Serial.println("请说话...(录音" + String(RECORDING_DURATION) + "秒)");
   
   // 创建I2S实例 - 作为局部变量
   I2SClass i2s;
@@ -135,10 +121,7 @@ void startRecording() {
   
   // 初始化I2S进行录音
   if (!i2s.begin(I2S_MODE_PDM_RX, 16000, I2S_DATA_BIT_WIDTH_16BIT, I2S_SLOT_MODE_MONO)) {
-    Serial.println("I2S init failed!");
-    tft.fillRect(0, 60, tft.width(), 20, TFT_RED);
-    tft.setCursor(10, 60);
-    tft.print("Record Error");
+    Serial.println("初始化I2S失败！");
     return;
   }
   
@@ -183,6 +166,7 @@ void startRecording() {
 // 发送消息到ChatGPT
 void chatGptCall(String message) {
   Serial.println("正在向ChatGPT发送请求...");
+  gettingResponse = true;
   
   String response = gptChat.sendMessage(message);
   
@@ -194,8 +178,10 @@ void chatGptCall(String message) {
     if (response.length() > 0) {
       ttsCall(response);
     }
+    gettingResponse = false;
   } else {
     Serial.println("获取ChatGPT响应失败");
+    gettingResponse = false;
   }
 }
 
