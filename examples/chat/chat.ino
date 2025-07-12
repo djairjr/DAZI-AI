@@ -4,16 +4,24 @@
 #include "ESP_I2S.h"
 
 // 定义I2S引脚（用于音频输出）
-#define I2S_DOUT 45
+#define I2S_DOUT 47
 #define I2S_BCLK 48
-#define I2S_LRC 47
+#define I2S_LRC 45
 
-// 定义麦克风输入引脚
-#define MIC_DATA_PIN 42
-#define MIC_CLOCK_PIN 41
+// 定义INMP441麦克风输入引脚 (I2S标准模式)
+// INMP441连接方式:
+// VDD -> 3.3V (不要使用5V!)
+// GND -> GND
+// L/R -> GND (选择左声道)
+// WS  -> GPIO 25 (左右声道时钟)
+// SCK -> GPIO 32 (串行时钟)
+// SD  -> GPIO 33 (串行数据)
+#define I2S_MIC_SERIAL_CLOCK 5    // SCK - 串行时钟
+#define I2S_MIC_LEFT_RIGHT_CLOCK 4 // WS - 左右声道时钟
+#define I2S_MIC_SERIAL_DATA 6     // SD - 串行数据
 
 // 定义录音时长（秒）
-#define RECORDING_DURATION  8
+#define RECORDING_DURATION  15
 
 // WiFi设置
 const char* ssid     = "2nd-curv";  
@@ -63,7 +71,7 @@ void setup() {
     // 设置音量
     audio.setVolume(100);
     
-    // 不再需要在这里设置麦克风引脚，将在录音函数中设置
+    // INMP441麦克风将在录音函数中初始化 (使用标准I2S模式)
     
     Serial.println("\n----- 系统就绪 -----");
     Serial.println("1. 输入文本直接与ChatGPT对话");
@@ -116,11 +124,11 @@ void startRecordingAndTranscription() {
   // 创建I2S实例 - 作为局部变量
   I2SClass i2s;
   
-  // 设置I2S麦克风输入引脚
-  i2s.setPinsPdmRx(MIC_DATA_PIN, MIC_CLOCK_PIN);
-  
-  // 初始化I2S进行录音
-  if (!i2s.begin(I2S_MODE_PDM_RX, 16000, I2S_DATA_BIT_WIDTH_16BIT, I2S_SLOT_MODE_MONO)) {
+  // 设置INMP441麦克风I2S引脚 (标准I2S模式)
+  i2s.setPins(I2S_MIC_SERIAL_CLOCK, I2S_MIC_LEFT_RIGHT_CLOCK, -1, I2S_MIC_SERIAL_DATA);
+
+  // 初始化I2S进行录音 (使用标准I2S模式，适配INMP441)
+  if (!i2s.begin(I2S_MODE_STD, 16000, I2S_DATA_BIT_WIDTH_32BIT, I2S_SLOT_MODE_MONO, I2S_STD_SLOT_LEFT)) {
     Serial.println("初始化I2S失败！");
     return;
   }
