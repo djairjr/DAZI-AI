@@ -1,7 +1,7 @@
 #include "ArduinoGPTChat.h"
 #include <SPIFFS.h>
 
-// Base64编码表
+// Base64 encoding table
 const char base64_chars[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
 void ArduinoGPTChat::base64_encode(const uint8_t* input, size_t length, char* output) {
@@ -61,29 +61,29 @@ String ArduinoGPTChat::sendImageMessage(const char* imageFilePath, String questi
   size_t fileSize = imageFile.size();
   Serial.printf("File size: %d bytes\n", fileSize);
   
-  // 方案2：使用flash空间存储base64编码数据
+  // Solution 2: Use flash space to store base64 encoded data
   const char* tempBase64File = "/temp_base64.txt";
-  
-  // 删除可能存在的临时文件
+
+  // Delete possibly existing temporary file
   if (SPIFFS.exists(tempBase64File)) {
     SPIFFS.remove(tempBase64File);
   }
-  
-  // 创建临时文件用于存储base64数据
+
+  // Create temporary file to store base64 data
   File base64File = SPIFFS.open(tempBase64File, FILE_WRITE);
   if (!base64File) {
     Serial.println("Failed to create temp base64 file");
     imageFile.close();
     return "Error: Failed to create temp file";
   }
-  
-  // 写入base64前缀
+
+  // Write base64 prefix
   base64File.print("data:image/png;base64,");
   
   Serial.println("Starting base64 encoding and writing to SD...");
-  
-  // 使用更小的块大小和动态内存分配，避免栈溢出
-  const size_t chunkSize = 1500; // 减小到1.5KB chunks (must be multiple of 3 for base64)
+
+  // Use smaller chunk size and dynamic memory allocation to avoid stack overflow
+  const size_t chunkSize = 1500; // Reduced to 1.5KB chunks (must be multiple of 3 for base64)
   
   uint8_t* buffer = (uint8_t*)malloc(chunkSize);
   if (!buffer) {
@@ -119,35 +119,35 @@ String ArduinoGPTChat::sendImageMessage(const char* imageFilePath, String questi
       return "Error: Failed to read file chunk";
     }
     
-    // 编码当前块
+    // Encode current chunk
     base64_encode(buffer, bytesRead, encodedChunk);
-    
-    // 写入编码数据到SPIFFS卡
+
+    // Write encoded data to SPIFFS
     base64File.print(encodedChunk);
-    
+
     totalProcessed += bytesRead;
-    
-    // 显示进度
+
+    // Display progress
     if (totalProcessed % 15000 == 0 || totalProcessed == fileSize) {
-      Serial.printf("Processed: %d/%d bytes (%.1f%%)\n", 
-                   totalProcessed, fileSize, 
+      Serial.printf("Processed: %d/%d bytes (%.1f%%)\n",
+                   totalProcessed, fileSize,
                    (float)totalProcessed / fileSize * 100);
     }
-    
-    // 添加小延迟，让系统有时间处理其他任务
+
+    // Add small delay to give system time to handle other tasks
     delay(10);
   }
   
-  // 释放缓冲区内存
+  // Free buffer memory
   free(buffer);
   free(encodedChunk);
-  
+
   imageFile.close();
   base64File.close();
-  
+
   Serial.println("Base64 encoding completed and saved to SPIFFS");
-  
-  // 检查生成的base64文件大小
+
+  // Check generated base64 file size
   File checkFile = SPIFFS.open(tempBase64File);
   if (!checkFile) {
     Serial.println("Failed to open temp base64 file for reading");
@@ -158,40 +158,40 @@ String ArduinoGPTChat::sendImageMessage(const char* imageFilePath, String questi
   Serial.printf("Base64 file size: %d bytes\n", base64FileSize);
   checkFile.close();
   
-  // 现在构建JSON，使用较小的缓冲区
-  DynamicJsonDocument doc(2048); // 只需要小缓冲区，因为不包含base64数据
+  // Now build JSON using smaller buffer
+  DynamicJsonDocument doc(2048); // Only need small buffer since it doesn't contain base64 data
   doc["model"] = "gpt-4.1-nano";
   doc["messages"] = JsonArray();
   JsonObject message = doc["messages"].createNestedObject();
   message["role"] = "user";
   JsonArray content = message.createNestedArray("content");
   
-  // 添加文本部分
+  // Add text part
   JsonObject textPart = content.createNestedObject();
   textPart["type"] = "text";
   textPart["text"] = question;
-  
-  // 添加图片部分
+
+  // Add image part
   JsonObject imagePart = content.createNestedObject();
   imagePart["type"] = "image_url";
   JsonObject imageUrl = imagePart.createNestedObject("image_url");
-  
-  // 设置占位符，稍后替换
+
+  // Set placeholder, replace later
   imageUrl["url"] = "PLACEHOLDER_FOR_BASE64_DATA";
   
   doc["max_tokens"] = 300;
-  
-  // 序列化JSON到字符串
+
+  // Serialize JSON to string
   String jsonTemplate;
   serializeJson(doc, jsonTemplate);
-  
+
   Serial.println("JSON template created");
   Serial.printf("Template size: %d bytes\n", jsonTemplate.length());
-  
-  // 构建完整JSON，但分块读取base64数据以节省内存
+
+  // Build complete JSON, but read base64 data in chunks to save memory
   Serial.println("Building JSON with chunked base64 reading...");
-  
-  // 计算最终JSON大小
+
+  // Calculate final JSON size
   int placeholderPos = jsonTemplate.indexOf("PLACEHOLDER_FOR_BASE64_DATA");
   String jsonPart1 = jsonTemplate.substring(0, placeholderPos);
   String jsonPart2 = jsonTemplate.substring(placeholderPos + strlen("PLACEHOLDER_FOR_BASE64_DATA"));
@@ -200,23 +200,23 @@ String ArduinoGPTChat::sendImageMessage(const char* imageFilePath, String questi
   Serial.printf("JSON part 2 size: %d bytes\n", jsonPart2.length());
   Serial.printf("Base64 data size: %d bytes\n", base64FileSize);
   
-  // 创建一个临时文件来存储完整的JSON
+  // Create a temporary file to store complete JSON
   const char* tempJsonFile = "/temp_json.txt";
   if (SPIFFS.exists(tempJsonFile)) {
     SPIFFS.remove(tempJsonFile);
   }
-  
+
   File jsonFile = SPIFFS.open(tempJsonFile, FILE_WRITE);
   if (!jsonFile) {
     Serial.println("Failed to create temp JSON file");
     SPIFFS.remove(tempBase64File);
     return "Error: Failed to create temp JSON file";
   }
-  
-  // 写入JSON第一部分
+
+  // Write first part of JSON
   jsonFile.print(jsonPart1);
-  
-  // 分块读取base64数据并写入JSON文件
+
+  // Read base64 data in chunks and write to JSON file
   Serial.println("Copying base64 data to JSON file...");
   File base64ReadFile = SPIFFS.open(tempBase64File);
   if (!base64ReadFile) {
@@ -246,7 +246,7 @@ String ArduinoGPTChat::sendImageMessage(const char* imageFilePath, String questi
     jsonFile.write(copyBuffer, bytesRead);
     totalCopied += bytesRead;
     
-    if (totalCopied % 20480 == 0) { // 每20KB显示一次进度
+    if (totalCopied % 20480 == 0) { // Display progress every 20KB
       Serial.printf("Copied: %d/%d bytes\n", totalCopied, base64FileSize);
     }
   }
@@ -254,14 +254,14 @@ String ArduinoGPTChat::sendImageMessage(const char* imageFilePath, String questi
   free(copyBuffer);
   base64ReadFile.close();
   
-  // 写入JSON第二部分
+  // Write second part of JSON
   jsonFile.print(jsonPart2);
   jsonFile.close();
-  
-  // 清理base64临时文件
+
+  // Clean up base64 temporary file
   SPIFFS.remove(tempBase64File);
-  
-  // 检查JSON文件大小
+
+  // Check JSON file size
   File checkJsonFile = SPIFFS.open(tempJsonFile);
   if (!checkJsonFile) {
     Serial.println("Failed to open JSON file for size check");
@@ -273,19 +273,19 @@ String ArduinoGPTChat::sendImageMessage(const char* imageFilePath, String questi
   Serial.printf("Final JSON file size: %d bytes\n", jsonFileSize);
   checkJsonFile.close();
   
-  // 使用真正的流式HTTP发送，避免将大JSON加载到内存
+  // Use real streaming HTTP sending to avoid loading large JSON into memory
   Serial.println("Starting streaming HTTP POST...");
-  
+
   WiFiClientSecure client;
-  client.setInsecure(); // 跳过SSL证书验证
-  
+  client.setInsecure(); // Skip SSL certificate verification
+
   if (!client.connect("api.chatanywhere.tech", 443)) {
     Serial.println("Failed to connect to server");
     SPIFFS.remove(tempJsonFile);
     return "Error: Failed to connect to server";
   }
-  
-  // 发送HTTP请求头
+
+  // Send HTTP request headers
   client.print("POST /v1/chat/completions HTTP/1.1\r\n");
   client.print("Host: api.chatanywhere.tech\r\n");
   client.print("Content-Type: application/json\r\n");
@@ -297,10 +297,10 @@ String ArduinoGPTChat::sendImageMessage(const char* imageFilePath, String questi
   client.print("\r\n");
   client.print("Connection: close\r\n");
   client.print("\r\n");
-  
+
   Serial.println("Streaming JSON file...");
   
-  // 流式发送JSON文件
+  // Stream send JSON file
   File sendJsonFile = SPIFFS.open(tempJsonFile);
   if (!sendJsonFile) {
     Serial.println("Failed to open JSON file for streaming");
@@ -327,11 +327,11 @@ String ArduinoGPTChat::sendImageMessage(const char* imageFilePath, String questi
     client.write(streamBuffer, bytesRead);
     totalStreamed += bytesRead;
     
-    if (totalStreamed % 10240 == 0) { // 每10KB显示一次进度
+    if (totalStreamed % 10240 == 0) { // Display progress every 10KB
       Serial.printf("Streamed: %d/%d bytes\n", totalStreamed, jsonFileSize);
     }
-    
-    delay(1); // 小延迟确保数据发送稳定
+
+    delay(1); // Small delay to ensure stable data transmission
   }
   
   free(streamBuffer);
@@ -340,9 +340,9 @@ String ArduinoGPTChat::sendImageMessage(const char* imageFilePath, String questi
   
   Serial.printf("Total streamed: %d bytes\n", totalStreamed);
   Serial.println("Waiting for response...");
-  
-  // 等待响应
-  unsigned long timeout = millis() + 30000; // 30秒超时
+
+  // Wait for response
+  unsigned long timeout = millis() + 30000; // 30 second timeout
   while (!client.available() && millis() < timeout) {
     delay(100);
   }
@@ -353,18 +353,18 @@ String ArduinoGPTChat::sendImageMessage(const char* imageFilePath, String questi
     return "Error: HTTP response timeout";
   }
   
-  // 读取响应
+  // Read response
   String response = "";
   String line = "";
   bool headersPassed = false;
   int statusCode = 0;
-  
+
   Serial.println("Reading response headers...");
   
   while (client.available()) {
     char c = client.read();
     if (c == '\n') {
-      if (line.length() <= 1) { // 空行或只有\r，表示头部结束
+      if (line.length() <= 1) { // Empty line or only \r, indicates end of headers
         if (!headersPassed) {
           headersPassed = true;
           Serial.println("Headers passed, reading body...");
@@ -375,7 +375,7 @@ String ArduinoGPTChat::sendImageMessage(const char* imageFilePath, String questi
       if (headersPassed) {
         response += line + "\n";
       } else {
-        // 解析响应头
+        // Parse response headers
         if (line.startsWith("HTTP/1.1 ")) {
           statusCode = line.substring(9, 12).toInt();
           Serial.printf("HTTP Response code: %d\n", statusCode);
@@ -388,7 +388,7 @@ String ArduinoGPTChat::sendImageMessage(const char* imageFilePath, String questi
     }
   }
   
-  // 处理最后一行
+  // Handle last line
   if (line.length() > 0) {
     if (headersPassed) {
       response += line;
@@ -396,14 +396,14 @@ String ArduinoGPTChat::sendImageMessage(const char* imageFilePath, String questi
       Serial.println("Last header: " + line);
     }
   }
-  
+
   client.stop();
-  
+
   if (statusCode == 200 && response.length() > 0) {
     Serial.println("Raw response:");
     Serial.println(response);
-    
-    // 处理分块传输编码 - 查找JSON开始位置
+
+    // Handle chunked transfer encoding - find JSON start position
     String cleanResponse = response;
     int jsonStart = cleanResponse.indexOf('{');
     if (jsonStart > 0) {
@@ -411,7 +411,7 @@ String ArduinoGPTChat::sendImageMessage(const char* imageFilePath, String questi
       Serial.println("Cleaned JSON response:");
       Serial.println(cleanResponse);
     }
-    
+
     return _processResponse(cleanResponse);
   } else {
     Serial.println("Error response:");
@@ -445,12 +445,12 @@ String ArduinoGPTChat::_buildPayload(String message) {
   doc["model"] = "gpt-4.1-nano";
   JsonArray messages = doc.createNestedArray("messages");
   
-  // 添加系统消息，要求简短回答
+  // Add system message requesting brief answers
   JsonObject sysMsg = messages.createNestedObject();
   sysMsg["role"] = "system";
-  sysMsg["content"] = "请用简短的语言回答问题，回答不要超过30个字。避免过长的解释，直接给出关键信息。";
-  
-  // 添加用户消息
+  sysMsg["content"] = "Please answer questions briefly, responses should not exceed 30 words. Avoid lengthy explanations, provide key information directly.";
+
+  // Add user message
   JsonObject userMsg = messages.createNestedObject();
   userMsg["role"] = "user";
   userMsg["content"] = message;
@@ -469,17 +469,17 @@ String ArduinoGPTChat::_processResponse(String response) {
 }
 
 bool ArduinoGPTChat::textToSpeech(String text) {
-  // 创建一个临时的Audio对象
+  // Create a temporary Audio object
   extern Audio audio;
-  
-  // 使用Audio库的openai_speech功能
+
+  // Use Audio library's openai_speech function
   return audio.openai_speech(
-    String(_apiKey),     // API密钥
-    "gpt-4o-mini-tts",   // 模型
-    text,                // 输入文本
-    "alloy",             // 声音
-    "mp3",               // 响应格式
-    "1.0"                // 语速
+    String(_apiKey),     // API key
+    "gpt-4o-mini-tts",   // Model
+    text,                // Input text
+    "alloy",             // Voice
+    "mp3",               // Response format
+    "1.0"                // Speed
   );
 }
 
@@ -490,37 +490,37 @@ String ArduinoGPTChat::_buildTTSPayload(String text) {
 
 String ArduinoGPTChat::speechToText(const char* audioFilePath) {
   String response = "";
-  
-  // 检查文件是否存在
+
+  // Check if file exists
   if (!SD.exists(audioFilePath)) {
     Serial.println("Audio file not found: " + String(audioFilePath));
     return response;
   }
-  
-  // 打开音频文件
+
+  // Open audio file
   File audioFile = SD.open(audioFilePath, FILE_READ);
   if (!audioFile) {
     Serial.println("Failed to open audio file!");
     return response;
   }
-  
-  // 获取文件大小
+
+  // Get file size
   size_t fileSize = audioFile.size();
   Serial.println("Audio file size: " + String(fileSize) + " bytes");
-  
-  // 创建一个临时缓冲区来存储整个文件内容
-  // 注意：这可能会占用大量内存，如果文件很大，可能会失败
+
+  // Create a temporary buffer to store entire file content
+  // Note: This may use a lot of memory, may fail if file is very large
   uint8_t* fileData = (uint8_t*)malloc(fileSize);
   if (!fileData) {
     Serial.println("Failed to allocate memory for file!");
     audioFile.close();
     return response;
   }
-  
-  // 读取文件内容到缓冲区
+
+  // Read file content to buffer
   size_t bytesRead = audioFile.read(fileData, fileSize);
   audioFile.close();
-  
+
   if (bytesRead != fileSize) {
     Serial.println("Failed to read entire file!");
     free(fileData);
@@ -528,63 +528,63 @@ String ArduinoGPTChat::speechToText(const char* audioFilePath) {
   }
   
   Serial.println("File read into memory successfully.");
-  
-  // 使用与Python示例相同的边界
+
+  // Use same boundary as Python example
   String boundary = "wL36Yn8afVp8Ag7AmP8qZ0SA4n1v9T";
-  
-  // 构建multipart/form-data请求体的各个部分
-  // 文件部分
+
+  // Build multipart/form-data request body parts
+  // File part
   String part1 = "--" + boundary + "\r\n";
   part1 += "Content-Disposition: form-data; name=file; filename=audio.wav\r\n";
   part1 += "Content-Type: audio/wav\r\n\r\n";
-  
-  // 模型部分
+
+  // Model part
   String part2 = "\r\n--" + boundary + "\r\n";
   part2 += "Content-Disposition: form-data; name=model;\r\n";
   part2 += "Content-Type: text/plain\r\n\r\n";
   part2 += "whisper-1";
-  
-  // 提示部分（与Python示例匹配）
+
+  // Prompt part (matching Python example)
   String part3 = "\r\n--" + boundary + "\r\n";
   part3 += "Content-Disposition: form-data; name=prompt;\r\n";
   part3 += "Content-Type: text/plain\r\n\r\n";
   part3 += "eiusmod nulla";
-  
-  // 响应格式部分
+
+  // Response format part
   String part4 = "\r\n--" + boundary + "\r\n";
   part4 += "Content-Disposition: form-data; name=response_format;\r\n";
   part4 += "Content-Type: text/plain\r\n\r\n";
   part4 += "json";
-  
-  // 温度部分
+
+  // Temperature part
   String part5 = "\r\n--" + boundary + "\r\n";
   part5 += "Content-Disposition: form-data; name=temperature;\r\n";
   part5 += "Content-Type: text/plain\r\n\r\n";
   part5 += "0";
-  
-  // 语言部分（与Python示例匹配）
+
+  // Language part (matching Python example)
   String part6 = "\r\n--" + boundary + "\r\n";
   part6 += "Content-Disposition: form-data; name=language;\r\n";
   part6 += "Content-Type: text/plain\r\n\r\n";
   part6 += "";
-  
-  // 结束边界
+
+  // End boundary
   String part7 = "\r\n--" + boundary + "--\r\n";
-  
-  // 计算总内容长度
-  size_t totalLength = part1.length() + fileSize + part2.length() + part3.length() + 
+
+  // Calculate total content length
+  size_t totalLength = part1.length() + fileSize + part2.length() + part3.length() +
                       part4.length() + part5.length() + part6.length() + part7.length();
   
-  // 初始化HTTP客户端
+  // Initialize HTTP client
   HTTPClient http;
   http.begin(_sttApiUrl);
-  
-  // 设置请求头
+
+  // Set request headers
   http.addHeader("Content-Type", "multipart/form-data; boundary=" + boundary);
   http.addHeader("Authorization", "Bearer " + String(_apiKey));
   http.addHeader("Content-Length", String(totalLength));
-  
-  // 合并所有部分为一个完整的请求体
+
+  // Merge all parts into one complete request body
   Serial.println("Preparing request body...");
   uint8_t* requestBody = (uint8_t*)malloc(totalLength);
   if (!requestBody) {
@@ -592,65 +592,65 @@ String ArduinoGPTChat::speechToText(const char* audioFilePath) {
     free(fileData);
     return response;
   }
-  
-  // 拷贝各部分到请求体
+
+  // Copy parts to request body
   size_t pos = 0;
-  
-  // 拷贝 part1
+
+  // Copy part1
   memcpy(requestBody + pos, part1.c_str(), part1.length());
   pos += part1.length();
-  
-  // 拷贝文件数据
+
+  // Copy file data
   memcpy(requestBody + pos, fileData, fileSize);
   pos += fileSize;
-  free(fileData); // 释放文件数据的内存
-  
-  // 拷贝其余各部分
+  free(fileData); // Free file data memory
+
+  // Copy remaining parts
   memcpy(requestBody + pos, part2.c_str(), part2.length());
   pos += part2.length();
-  
+
   memcpy(requestBody + pos, part3.c_str(), part3.length());
   pos += part3.length();
-  
+
   memcpy(requestBody + pos, part4.c_str(), part4.length());
   pos += part4.length();
-  
+
   memcpy(requestBody + pos, part5.c_str(), part5.length());
   pos += part5.length();
-  
+
   memcpy(requestBody + pos, part6.c_str(), part6.length());
   pos += part6.length();
-  
+
   memcpy(requestBody + pos, part7.c_str(), part7.length());
   pos += part7.length();
-  
-  // 确认总长度匹配
+
+  // Confirm total length matches
   if (pos != totalLength) {
     Serial.println("Warning: actual body length doesn't match calculated length");
     Serial.println("Calculated: " + String(totalLength) + ", Actual: " + String(pos));
   }
-  
-  // 发送请求
+
+  // Send request
   Serial.println("Sending STT request...");
   int httpCode = http.POST(requestBody, totalLength);
-  
-  // 释放请求体内存
+
+  // Free request body memory
   free(requestBody);
   
   Serial.print("HTTP Response Code: ");
   Serial.println(httpCode);
   
   if (httpCode == 200) {
-    // 获取响应体
+    // Get response body
     response = http.getString();
     Serial.println("Got STT response: " + response);
-    
-    // 解析JSON响应
+
+    // Parse JSON response
     DynamicJsonDocument jsonDoc(1024);
     DeserializationError error = deserializeJson(jsonDoc, response);
-    
+
     if (!error) {
-      // 提取转录的文本
+      // Extract transcribed text
       response = jsonDoc["text"].as<String>();
     } else {
       Serial.print("JSON parsing error: ");
@@ -660,7 +660,7 @@ String ArduinoGPTChat::speechToText(const char* audioFilePath) {
   } else {
     Serial.print("HTTP Error: ");
     Serial.println(httpCode);
-    // 尝试获取错误响应内容
+    // Try to get error response content
     String errorResponse = http.getString();
     if (errorResponse.length() > 0) {
       Serial.println("Error response: " + errorResponse);
@@ -673,7 +673,7 @@ String ArduinoGPTChat::speechToText(const char* audioFilePath) {
 }
 
 String ArduinoGPTChat::_buildMultipartForm(const char* audioFilePath, String boundary) {
-  // 此方法不再使用，保留方法签名以保持兼容性
+  // This method is no longer used, keeping method signature for compatibility
   return "";
 }
 
@@ -687,126 +687,126 @@ String ArduinoGPTChat::speechToTextFromBuffer(uint8_t* audioBuffer, size_t buffe
   
   Serial.println("Audio buffer size: " + String(bufferSize) + " bytes");
   
-  // 使用与Python示例相同的边界
+  // Use same boundary as Python example
   String boundary = "wL36Yn8afVp8Ag7AmP8qZ0SA4n1v9T";
-  
-  // 构建multipart/form-data请求体的各个部分
-  // 文件部分
+
+  // Build multipart/form-data request body parts
+  // File part
   String part1 = "--" + boundary + "\r\n";
   part1 += "Content-Disposition: form-data; name=file; filename=audio.wav\r\n";
   part1 += "Content-Type: audio/wav\r\n\r\n";
-  
-  // 模型部分
+
+  // Model part
   String part2 = "\r\n--" + boundary + "\r\n";
   part2 += "Content-Disposition: form-data; name=model;\r\n";
   part2 += "Content-Type: text/plain\r\n\r\n";
   part2 += "whisper-1";
-  
-  // 提示部分（与Python示例匹配）
+
+  // Prompt part (matching Python example)
   String part3 = "\r\n--" + boundary + "\r\n";
   part3 += "Content-Disposition: form-data; name=prompt;\r\n";
   part3 += "Content-Type: text/plain\r\n\r\n";
   part3 += "eiusmod nulla";
-  
-  // 响应格式部分
+
+  // Response format part
   String part4 = "\r\n--" + boundary + "\r\n";
   part4 += "Content-Disposition: form-data; name=response_format;\r\n";
   part4 += "Content-Type: text/plain\r\n\r\n";
   part4 += "json";
-  
-  // 温度部分
+
+  // Temperature part
   String part5 = "\r\n--" + boundary + "\r\n";
   part5 += "Content-Disposition: form-data; name=temperature;\r\n";
   part5 += "Content-Type: text/plain\r\n\r\n";
   part5 += "0";
-  
-  // 语言部分（与Python示例匹配）
+
+  // Language part (matching Python example)
   String part6 = "\r\n--" + boundary + "\r\n";
   part6 += "Content-Disposition: form-data; name=language;\r\n";
   part6 += "Content-Type: text/plain\r\n\r\n";
   part6 += "";
-  
-  // 结束边界
+
+  // End boundary
   String part7 = "\r\n--" + boundary + "--\r\n";
-  
-  // 计算总内容长度
-  size_t totalLength = part1.length() + bufferSize + part2.length() + part3.length() + 
+
+  // Calculate total content length
+  size_t totalLength = part1.length() + bufferSize + part2.length() + part3.length() +
                       part4.length() + part5.length() + part6.length() + part7.length();
   
-  // 初始化HTTP客户端
+  // Initialize HTTP client
   HTTPClient http;
   http.begin(_sttApiUrl);
-  
-  // 设置请求头
+
+  // Set request headers
   http.addHeader("Content-Type", "multipart/form-data; boundary=" + boundary);
   http.addHeader("Authorization", "Bearer " + String(_apiKey));
   http.addHeader("Content-Length", String(totalLength));
-  
-  // 合并所有部分为一个完整的请求体
+
+  // Merge all parts into one complete request body
   Serial.println("Preparing request body...");
   uint8_t* requestBody = (uint8_t*)malloc(totalLength);
   if (!requestBody) {
     Serial.println("Failed to allocate memory for request body!");
     return response;
   }
-  
-  // 拷贝各部分到请求体
+
+  // Copy parts to request body
   size_t pos = 0;
-  
-  // 拷贝 part1
+
+  // Copy part1
   memcpy(requestBody + pos, part1.c_str(), part1.length());
   pos += part1.length();
-  
-  // 拷贝音频数据
+
+  // Copy audio data
   memcpy(requestBody + pos, audioBuffer, bufferSize);
   pos += bufferSize;
-  
-  // 拷贝其余各部分
+
+  // Copy remaining parts
   memcpy(requestBody + pos, part2.c_str(), part2.length());
   pos += part2.length();
-  
+
   memcpy(requestBody + pos, part3.c_str(), part3.length());
   pos += part3.length();
-  
+
   memcpy(requestBody + pos, part4.c_str(), part4.length());
   pos += part4.length();
-  
+
   memcpy(requestBody + pos, part5.c_str(), part5.length());
   pos += part5.length();
-  
+
   memcpy(requestBody + pos, part6.c_str(), part6.length());
   pos += part6.length();
-  
+
   memcpy(requestBody + pos, part7.c_str(), part7.length());
   pos += part7.length();
-  
-  // 确认总长度匹配
+
+  // Confirm total length matches
   if (pos != totalLength) {
     Serial.println("Warning: actual body length doesn't match calculated length");
     Serial.println("Calculated: " + String(totalLength) + ", Actual: " + String(pos));
   }
-  
-  // 发送请求
+
+  // Send request
   Serial.println("Sending STT request...");
   int httpCode = http.POST(requestBody, totalLength);
-  
-  // 释放请求体内存
+
+  // Free request body memory
   free(requestBody);
   
   Serial.print("HTTP Response Code: ");
   Serial.println(httpCode);
   
   if (httpCode == 200) {
-    // 获取响应体
+    // Get response body
     response = http.getString();
     Serial.println("Got STT response: " + response);
-    
-    // 解析JSON响应
+
+    // Parse JSON response
     DynamicJsonDocument jsonDoc(1024);
     DeserializationError error = deserializeJson(jsonDoc, response);
-    
+
     if (!error) {
-      // 提取转录的文本
+      // Extract transcribed text
       response = jsonDoc["text"].as<String>();
     } else {
       Serial.print("JSON parsing error: ");
@@ -816,7 +816,7 @@ String ArduinoGPTChat::speechToTextFromBuffer(uint8_t* audioBuffer, size_t buffe
   } else {
     Serial.print("HTTP Error: ");
     Serial.println(httpCode);
-    // 尝试获取错误响应内容
+    // Try to get error response content
     String errorResponse = http.getString();
     if (errorResponse.length() > 0) {
       Serial.println("Error response: " + errorResponse);

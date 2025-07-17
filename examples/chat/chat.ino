@@ -3,206 +3,206 @@
 #include "Audio.h"
 #include "ESP_I2S.h"
 
-// 定义I2S引脚（用于音频输出）
+// Define I2S pins for audio output
 #define I2S_DOUT 47
 #define I2S_BCLK 48
 #define I2S_LRC 45
 
-// 定义INMP441麦克风输入引脚 (I2S标准模式)
-// INMP441连接方式:
-// VDD -> 3.3V (不要使用5V!)
+// Define INMP441 microphone input pins (I2S standard mode)
+// INMP441 wiring:
+// VDD -> 3.3V (DO NOT use 5V!)
 // GND -> GND
-// L/R -> GND (选择左声道)
-// WS  -> GPIO 25 (左右声道时钟)
-// SCK -> GPIO 32 (串行时钟)
-// SD  -> GPIO 33 (串行数据)
-#define I2S_MIC_SERIAL_CLOCK 5    // SCK - 串行时钟
-#define I2S_MIC_LEFT_RIGHT_CLOCK 4 // WS - 左右声道时钟
-#define I2S_MIC_SERIAL_DATA 6     // SD - 串行数据
+// L/R -> GND (select left channel)
+// WS  -> GPIO 25 (left/right clock)
+// SCK -> GPIO 32 (serial clock)
+// SD  -> GPIO 33 (serial data)
+#define I2S_MIC_SERIAL_CLOCK 5    // SCK - serial clock
+#define I2S_MIC_LEFT_RIGHT_CLOCK 4 // WS - left/right clock
+#define I2S_MIC_SERIAL_DATA 6     // SD - serial data
 
-// 定义录音时长（秒）
-#define RECORDING_DURATION  15
+// Define recording duration (seconds)
+#define RECORDING_DURATION  5
 
-// WiFi设置
-const char* ssid     = "2nd-curv";  
-const char* password = "xbotpark";  
+// WiFi settings
+const char* ssid     = "2nd-curv";
+const char* password = "xbotpark";
 
-// OpenAI API密钥
-const char* apiKey = "sk-CkxIb6MfdTBgZkdm0MtUEGVGk6Q6o5X5BRB1DwE2BdeSLSqB";  
+// OpenAI API key
+const char* apiKey = "sk-CkxIb6MfdTBgZkdm0MtUEGVGk6Q6o5X5BRB1DwE2BdeSLSqB";
 
-// 不再创建全局I2S实例，将在录音函数内创建局部实例
+// No longer create global I2S instance, will create local instance in recording function
 
-// 全局声明audio变量，用于TTS播放
+// Global audio variable declaration for TTS playback
 Audio audio;
 
-// 初始化ArduinoGPTChat实例
+// Initialize ArduinoGPTChat instance
 ArduinoGPTChat gptChat(apiKey);
 
-// 状态标志
+// Status flags
 bool gettingResponse = false;
 bool recordingMode = false;
 
 void setup() {
-  // 初始化串口
+  // Initialize serial port
   Serial.begin(115200);
-  delay(1000); // 给串口一些时间来初始化
-  
-  Serial.println("\n\n----- 语音助手系统启动 -----");
-  
-  // 连接WiFi网络
+  delay(1000); // Give serial port some time to initialize
+
+  Serial.println("\n\n----- Voice Assistant System Starting -----");
+
+  // Connect to WiFi network
   WiFi.mode(WIFI_STA);
   WiFi.begin(ssid, password);
-  Serial.println("正在连接WiFi...");
-  
+  Serial.println("Connecting to WiFi...");
+
   int attempt = 0;
   while (WiFi.status() != WL_CONNECTED && attempt < 20) {
     Serial.print('.');
     delay(1000);
     attempt++;
   }
-  
+
   if (WiFi.status() == WL_CONNECTED) {
-    Serial.println("\nWiFi连接成功！");
-    Serial.print("IP地址: ");
+    Serial.println("\nWiFi connected successfully!");
+    Serial.print("IP address: ");
     Serial.println(WiFi.localIP());
-    
-    // 设置I2S输出引脚（用于TTS播放）
+
+    // Set I2S output pins (for TTS playback)
     audio.setPinout(I2S_BCLK, I2S_LRC, I2S_DOUT);
-    // 设置音量
+    // Set volume
     audio.setVolume(100);
-    
-    // INMP441麦克风将在录音函数中初始化 (使用标准I2S模式)
-    
-    Serial.println("\n----- 系统就绪 -----");
-    Serial.println("1. 输入文本直接与ChatGPT对话");
-    Serial.println("2. 输入'TTS:文本内容'进行语音合成");
-    Serial.println("3. 输入'RECORD'开始语音录制并识别");
+
+    // INMP441 microphone will be initialized in recording function (using standard I2S mode)
+
+    Serial.println("\n----- System Ready -----");
+    Serial.println("1. Enter text to chat directly with ChatGPT");
+    Serial.println("2. Enter 'TTS:text content' for speech synthesis");
+    Serial.println("3. Enter 'RECORD' to start voice recording and recognition");
   } else {
-    Serial.println("\n连接WiFi失败。请检查网络凭据并重试。");
+    Serial.println("\nFailed to connect to WiFi. Please check network credentials and retry.");
   }
 }
 
 void loop() {
-  // 处理音频循环（TTS播放）
+  // Handle audio loop (TTS playback)
   audio.loop();
-  
-  // 处理串口命令
+
+  // Handle serial commands
   if (Serial.available() > 0) {
     String command = Serial.readStringUntil('\n');
     command.trim();
-    
+
     if (command.length() > 0) {
       if (command == "RECORD") {
-        // 开始语音录制和识别
+        // Start voice recording and recognition
         startRecordingAndTranscription();
       } else if (command.startsWith("TTS:")) {
-        // 文本转语音命令
+        // Text-to-speech command
         String ttsText = command.substring(4);
         ttsText.trim();
         if (ttsText.length() > 0) {
           ttsCall(ttsText);
         } else {
-          Serial.println("TTS文本为空。请使用'TTS:你的文本'格式");
+          Serial.println("TTS text is empty. Please use 'TTS:your text' format");
         }
       } else {
-        // 普通文本作为ChatGPT输入
-        Serial.print("用户: ");
+        // Regular text as ChatGPT input
+        Serial.print("User: ");
         Serial.println(command);
         chatGptCall(command);
       }
     }
   }
-  
-  delay(10); // 小延迟以防止CPU过载
+
+  delay(10); // Small delay to prevent CPU overload
 }
 
-// 开始录音并将识别结果发送给ChatGPT
+// Start recording and send recognition result to ChatGPT
 void startRecordingAndTranscription() {
-  Serial.println("\n----- 开始录音 -----");
-  Serial.println("请说话...(录音" + String(RECORDING_DURATION) + "秒)");
-  
-  // 创建I2S实例 - 作为局部变量
+  Serial.println("\n----- Starting Recording -----");
+  Serial.println("Please speak... (recording for " + String(RECORDING_DURATION) + " seconds)");
+
+  // Create I2S instance - as local variable
   I2SClass i2s;
-  
-  // 设置INMP441麦克风I2S引脚 (标准I2S模式)
+
+  // Set INMP441 microphone I2S pins (standard I2S mode)
   i2s.setPins(I2S_MIC_SERIAL_CLOCK, I2S_MIC_LEFT_RIGHT_CLOCK, -1, I2S_MIC_SERIAL_DATA);
 
-  // 初始化I2S进行录音 (使用标准I2S模式，适配INMP441)
+  // Initialize I2S for recording (using standard I2S mode, compatible with INMP441)
   if (!i2s.begin(I2S_MODE_STD, 16000, I2S_DATA_BIT_WIDTH_32BIT, I2S_SLOT_MODE_MONO, I2S_STD_SLOT_LEFT)) {
-    Serial.println("初始化I2S失败！");
+    Serial.println("Failed to initialize I2S!");
     return;
   }
-  
-  // 创建变量存储音频数据
+
+  // Create variables to store audio data
   uint8_t *wav_buffer;
   size_t wav_size;
-  
-  // 录制音频
+
+  // Record audio
   wav_buffer = i2s.recordWAV(RECORDING_DURATION, &wav_size);
-  
+
   if (wav_buffer == NULL || wav_size == 0) {
-    Serial.println("录制音频失败或缓冲区为空！");
-    i2s.end(); // 关闭I2S
+    Serial.println("Failed to record audio or buffer is empty!");
+    i2s.end(); // Close I2S
     return;
   }
-  
-  // 录音完成后立即关闭I2S，释放资源
+
+  // Close I2S immediately after recording to release resources
   i2s.end();
-  
-  Serial.println("录音完成，大小: " + String(wav_size) + " 字节");
-  Serial.println("正在将语音转换为文本...");
-  
-  // 将语音转换为文本
+
+  Serial.println("Recording completed, size: " + String(wav_size) + " bytes");
+  Serial.println("Converting speech to text...");
+
+  // Convert speech to text
   String transcribedText = gptChat.speechToTextFromBuffer(wav_buffer, wav_size);
-  
-  // 释放缓冲区内存
+
+  // Free buffer memory
   free(wav_buffer);
-  
-  // 显示转换结果
+
+  // Display conversion result
   if (transcribedText.length() > 0) {
-    Serial.println("\n识别结果: " + transcribedText);
-    
-    // 自动将识别结果发送给ChatGPT
-    Serial.println("\n正在将识别结果发送给ChatGPT...");
+    Serial.println("\nRecognition result: " + transcribedText);
+
+    // Automatically send recognition result to ChatGPT
+    Serial.println("\nSending recognition result to ChatGPT...");
     chatGptCall(transcribedText);
   } else {
-    Serial.println("未能识别到文本或发生错误。");
-    Serial.println("可能没有检测到清晰的语音，请重试。");
+    Serial.println("Failed to recognize text or an error occurred.");
+    Serial.println("Clear speech may not have been detected, please try again.");
   }
 }
 
-// 发送消息到ChatGPT
+// Send message to ChatGPT
 void chatGptCall(String message) {
-  Serial.println("正在向ChatGPT发送请求...");
+  Serial.println("Sending request to ChatGPT...");
   gettingResponse = true;
-  
+
   String response = gptChat.sendMessage(message);
-  
+
   if (response != "") {
     Serial.print("ChatGPT: ");
     Serial.println(response);
-    
-    // 自动将回复转换为语音
+
+    // Automatically convert reply to speech
     if (response.length() > 0) {
       ttsCall(response);
     }
     gettingResponse = false;
   } else {
-    Serial.println("获取ChatGPT响应失败");
+    Serial.println("Failed to get ChatGPT response");
     gettingResponse = false;
   }
 }
 
-// 文本转语音
+// Text to speech
 void ttsCall(String text) {
-  Serial.println("正在将文本转换为语音...");
-  
-  // 使用GPTChat的textToSpeech方法
+  Serial.println("Converting text to speech...");
+
+  // Use GPTChat's textToSpeech method
   bool success = gptChat.textToSpeech(text);
-  
+
   if (success) {
-    Serial.println("TTS音频正在通过扬声器播放");
+    Serial.println("TTS audio is playing through speaker");
   } else {
-    Serial.println("播放TTS音频失败");
+    Serial.println("Failed to play TTS audio");
   }
 }
