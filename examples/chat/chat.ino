@@ -50,6 +50,11 @@ ArduinoGPTChat gptChat;
 // const char* apiBaseUrl = "https://your-api-server.com";
 // ArduinoGPTChat gptChat(apiKey, apiBaseUrl);
 
+// System prompt configuration (modify as needed)
+const char* systemPrompt = "Please answer questions briefly, responses should not exceed 30 words. Avoid lengthy explanations, provide key information directly.";
+
+
+
 // Button handling variables
 bool buttonPressed = false;
 bool wasButtonPressed = false;
@@ -85,6 +90,9 @@ void setup() {
     audio.setPinout(I2S_BCLK, I2S_LRC, I2S_DOUT);
     // Set volume
     audio.setVolume(100);
+
+    // Set system prompt (modify the systemPrompt variable above as needed)
+    gptChat.setSystemPrompt(systemPrompt);
 
     // Initialize recording with microphone pins and I2S configuration
     gptChat.initializeRecording(I2S_MIC_SERIAL_CLOCK, I2S_MIC_LEFT_RIGHT_CLOCK, I2S_MIC_SERIAL_DATA,

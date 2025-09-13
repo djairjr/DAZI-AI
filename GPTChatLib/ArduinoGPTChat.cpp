@@ -430,6 +430,7 @@ String ArduinoGPTChat::sendImageMessage(const char* imageFilePath, String questi
 ArduinoGPTChat::ArduinoGPTChat(const char* apiKey, const char* apiBaseUrl) {
   _apiKey = (apiKey != nullptr) ? apiKey : DEFAULT_API_KEY;
   _apiBaseUrl = (apiBaseUrl != nullptr) ? apiBaseUrl : DEFAULT_API_BASE_URL;
+  _systemPrompt = "";
   _updateApiUrls();
 }
 
@@ -440,6 +441,12 @@ void ArduinoGPTChat::setApiConfig(const char* apiKey, const char* apiBaseUrl) {
   if (apiBaseUrl != nullptr) {
     _apiBaseUrl = apiBaseUrl;
     _updateApiUrls();
+  }
+}
+
+void ArduinoGPTChat::setSystemPrompt(const char* systemPrompt) {
+  if (systemPrompt != nullptr) {
+    _systemPrompt = systemPrompt;
   }
 }
 
@@ -479,10 +486,12 @@ String ArduinoGPTChat::_buildPayload(String message) {
   doc["model"] = "gpt-4.1-nano";
   JsonArray messages = doc.createNestedArray("messages");
   
-  // Add system message requesting brief answers
-  JsonObject sysMsg = messages.createNestedObject();
-  sysMsg["role"] = "system";
-  sysMsg["content"] = "Please answer questions briefly, responses should not exceed 30 words. Avoid lengthy explanations, provide key information directly.";
+  // Add system message if configured
+  if (_systemPrompt.length() > 0) {
+    JsonObject sysMsg = messages.createNestedObject();
+    sysMsg["role"] = "system";
+    sysMsg["content"] = _systemPrompt;
+  }
 
   // Add user message
   JsonObject userMsg = messages.createNestedObject();

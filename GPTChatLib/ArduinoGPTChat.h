@@ -14,6 +14,7 @@ class ArduinoGPTChat {
   public:
     ArduinoGPTChat(const char* apiKey = nullptr, const char* apiBaseUrl = nullptr);
     void setApiConfig(const char* apiKey = nullptr, const char* apiBaseUrl = nullptr);
+    void setSystemPrompt(const char* systemPrompt);
     String sendMessage(String message);
     bool textToSpeech(String text);
     String speechToText(const char* audioFilePath);
@@ -38,6 +39,7 @@ class ArduinoGPTChat {
     String _apiUrl;
     String _ttsApiUrl;
     String _sttApiUrl;
+    String _systemPrompt;
     String _buildPayload(String message);
     String _processResponse(String response);
     String _buildTTSPayload(String text);
