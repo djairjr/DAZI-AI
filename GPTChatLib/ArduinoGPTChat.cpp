@@ -672,6 +672,154 @@ String ArduinoGPTChat::speechToText(const char* audioFilePath) {
   return response;
 }
 
+// Recording control functions implementation
+void ArduinoGPTChat::initializeRecording(int micClkPin, int micWsPin, int micDataPin, int sampleRate,
+                                         i2s_mode_t mode, i2s_data_bit_width_t bitWidth,
+                                         i2s_slot_mode_t slotMode, i2s_std_slot_mask_t slotMask) {
+  _micClkPin = micClkPin;
+  _micWsPin = micWsPin;
+  _micDataPin = micDataPin;
+  _sampleRate = sampleRate;
+  _i2sMode = mode;
+  _i2sBitWidth = bitWidth;
+  _i2sSlotMode = slotMode;
+  _i2sSlotMask = slotMask;
+  _isRecording = false;
+}
+
+bool ArduinoGPTChat::startRecording() {
+  if (_isRecording) {
+    return false; // Already recording
+  }
+
+  Serial.println("Starting recording...");
+
+  // Clear audio buffer
+  _audioBuffer.clear();
+
+  // Set microphone I2S pins
+  _recordingI2S.setPins(_micClkPin, _micWsPin, -1, _micDataPin);
+
+  // Initialize I2S for recording with stored configuration
+  if (!_recordingI2S.begin(_i2sMode, _sampleRate, _i2sBitWidth, _i2sSlotMode, _i2sSlotMask)) {
+    Serial.println("Failed to initialize I2S!");
+    return false;
+  }
+
+  _isRecording = true;
+  return true;
+}
+
+void ArduinoGPTChat::continueRecording() {
+  if (!_isRecording) return;
+
+  int16_t samples[_bufferSize];
+
+  // Read audio samples
+  size_t bytesRead = _recordingI2S.readBytes((char*)samples, _bufferSize * sizeof(int16_t));
+
+  if (bytesRead > 0) {
+    // Add samples to buffer
+    size_t samplesRead = bytesRead / sizeof(int16_t);
+    for (size_t i = 0; i < samplesRead; i++) {
+      _audioBuffer.push_back(samples[i]);
+    }
+  }
+}
+
+String ArduinoGPTChat::stopRecordingAndProcess() {
+  if (!_isRecording) {
+    return "";
+  }
+
+  // Stop I2S
+  _recordingI2S.end();
+  _isRecording = false;
+
+  if (_audioBuffer.empty()) {
+    Serial.println("No audio data recorded!");
+    return "";
+  }
+
+  Serial.println("Recording completed, samples: " + String(_audioBuffer.size()));
+  Serial.println("Converting speech to text...");
+
+  // Convert audio buffer to WAV format
+  uint8_t* wavBuffer = createWAVBuffer(_audioBuffer.data(), _audioBuffer.size());
+  size_t wavSize = calculateWAVSize(_audioBuffer.size());
+
+  if (wavBuffer == nullptr) {
+    Serial.println("Failed to create WAV buffer!");
+    return "";
+  }
+
+  // Convert speech to text
+  String transcribedText = speechToTextFromBuffer(wavBuffer, wavSize);
+
+  // Free buffer memory
+  free(wavBuffer);
+
+  return transcribedText;
+}
+
+bool ArduinoGPTChat::isRecording() {
+  return _isRecording;
+}
+
+size_t ArduinoGPTChat::getRecordedSampleCount() {
+  return _audioBuffer.size();
+}
+
+// WAV file handling functions
+uint8_t* ArduinoGPTChat::createWAVBuffer(int16_t* samples, size_t numSamples) {
+  size_t wavSize = calculateWAVSize(numSamples);
+  uint8_t* wavBuffer = (uint8_t*)malloc(wavSize);
+
+  if (wavBuffer == nullptr) {
+    return nullptr;
+  }
+
+  // WAV header
+  uint8_t header[44] = {
+    'R','I','F','F',  // ChunkID
+    0,0,0,0,          // ChunkSize (will be filled)
+    'W','A','V','E',  // Format
+    'f','m','t',' ',  // Subchunk1ID
+    16,0,0,0,         // Subchunk1Size
+    1,0,              // AudioFormat (PCM)
+    1,0,              // NumChannels (Mono)
+    0,0,0,0,          // SampleRate (will be filled)
+    0,0,0,0,          // ByteRate (will be filled)
+    2,0,              // BlockAlign
+    16,0,             // BitsPerSample
+    'd','a','t','a',  // Subchunk2ID
+    0,0,0,0           // Subchunk2Size (will be filled)
+  };
+
+  // Fill in the values
+  uint32_t chunkSize = wavSize - 8;
+  uint32_t sampleRate = _sampleRate;
+  uint32_t byteRate = sampleRate * 2; // 16-bit mono
+  uint32_t dataSize = numSamples * 2;
+
+  memcpy(&header[4], &chunkSize, 4);
+  memcpy(&header[24], &sampleRate, 4);
+  memcpy(&header[28], &byteRate, 4);
+  memcpy(&header[40], &dataSize, 4);
+
+  // Copy header
+  memcpy(wavBuffer, header, 44);
+
+  // Copy audio data
+  memcpy(wavBuffer + 44, samples, numSamples * 2);
+
+  return wavBuffer;
+}
+
+size_t ArduinoGPTChat::calculateWAVSize(size_t numSamples) {
+  return 44 + (numSamples * 2); // Header + 16-bit samples
+}
+
 String ArduinoGPTChat::_buildMultipartForm(const char* audioFilePath, String boundary) {
   // This method is no longer used, keeping method signature for compatibility
   return "";
