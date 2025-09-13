@@ -36,14 +36,19 @@
 const char* ssid     = "zh";
 const char* password = "66666666";
 
-// OpenAI API key
-const char* apiKey = "sk-I9DfTMZFWroj7eCIq0xuFl9uQZYNIludoEyt9pCQk3rMCNaY";
+
 
 // Global audio variable declaration for TTS playback
 Audio audio;
 
 // Initialize ArduinoGPTChat instance
-ArduinoGPTChat gptChat(apiKey);
+// Option 1: Use default API key and URL from library
+ArduinoGPTChat gptChat;
+
+// Option 2: Use custom API key and URL (uncomment if using custom configuration)
+// const char* apiKey = "your-api-key-here";
+// const char* apiBaseUrl = "https://your-api-server.com";
+// ArduinoGPTChat gptChat(apiKey, apiBaseUrl);
 
 // Button handling variables
 bool buttonPressed = false;

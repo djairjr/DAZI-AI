@@ -1,6 +1,13 @@
 #include "ArduinoGPTChat.h"
 #include <SPIFFS.h>
 
+// Default API configuration - users can modify these or set their own via setApiConfig()
+const char* DEFAULT_API_KEY = "sk-I9DfTMZFWroj7eCIq0xuFl9uQZYNIludoEyt9pCQk3rMCNaY";
+const char* DEFAULT_API_BASE_URL = "https://api.chatanywhere.tech";
+
+// Global variable for Audio library to use
+String g_api_host = "";
+
 // Base64 encoding table
 const char base64_chars[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
@@ -420,8 +427,35 @@ String ArduinoGPTChat::sendImageMessage(const char* imageFilePath, String questi
   }
 }
 
-ArduinoGPTChat::ArduinoGPTChat(const char* apiKey) {
-  _apiKey = apiKey;
+ArduinoGPTChat::ArduinoGPTChat(const char* apiKey, const char* apiBaseUrl) {
+  _apiKey = (apiKey != nullptr) ? apiKey : DEFAULT_API_KEY;
+  _apiBaseUrl = (apiBaseUrl != nullptr) ? apiBaseUrl : DEFAULT_API_BASE_URL;
+  _updateApiUrls();
+}
+
+void ArduinoGPTChat::setApiConfig(const char* apiKey, const char* apiBaseUrl) {
+  if (apiKey != nullptr) {
+    _apiKey = apiKey;
+  }
+  if (apiBaseUrl != nullptr) {
+    _apiBaseUrl = apiBaseUrl;
+    _updateApiUrls();
+  }
+}
+
+void ArduinoGPTChat::_updateApiUrls() {
+  _apiUrl = _apiBaseUrl + "/v1/chat/completions";
+  _ttsApiUrl = _apiBaseUrl + "/v1/audio/speech";
+  _sttApiUrl = _apiBaseUrl + "/v1/audio/transcriptions";
+
+  // Update global variable for Audio library
+  if(_apiBaseUrl.startsWith("https://")) {
+    g_api_host = _apiBaseUrl.substring(8);
+  } else if(_apiBaseUrl.startsWith("http://")) {
+    g_api_host = _apiBaseUrl.substring(7);
+  } else {
+    g_api_host = _apiBaseUrl;
+  }
 }
 
 String ArduinoGPTChat::sendMessage(String message) {
