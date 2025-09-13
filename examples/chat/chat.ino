@@ -1,7 +1,8 @@
-#include <WiFi.h>  
+#include <WiFi.h>
 #include <ArduinoGPTChat.h>
 #include "Audio.h"
 #include "ESP_I2S.h"
+#include <vector>
 
 // Define I2S pins for audio output
 #define I2S_DOUT 47
@@ -20,15 +21,18 @@
 #define I2S_MIC_LEFT_RIGHT_CLOCK 4 // WS - left/right clock
 #define I2S_MIC_SERIAL_DATA 6     // SD - serial data
 
+// Define boot button pin (GPIO0 is the boot button on most ESP32 boards)
+#define BOOT_BUTTON_PIN 0
+
 // Define recording duration (seconds)
-#define RECORDING_DURATION  5
+#define RECORDING_DURATION  2
 
 // WiFi settings
-const char* ssid     = "2nd-curv";
-const char* password = "xbotpark";
+const char* ssid     = "zh";
+const char* password = "66666666";
 
 // OpenAI API key
-const char* apiKey = "sk-CkxIb6MfdTBgZkdm0MtUEGVGk6Q6o5X5BRB1DwE2BdeSLSqB";
+const char* apiKey = "sk-I9DfTMZFWroj7eCIq0xuFl9uQZYNIludoEyt9pCQk3rMCNaY";
 
 // No longer create global I2S instance, will create local instance in recording function
 
@@ -40,7 +44,15 @@ ArduinoGPTChat gptChat(apiKey);
 
 // Status flags
 bool gettingResponse = false;
-bool recordingMode = false;
+bool buttonPressed = false;
+bool wasButtonPressed = false;
+bool isRecording = false;
+
+// Recording variables
+I2SClass recordingI2S;
+std::vector<int16_t> audioBuffer;
+const int SAMPLE_RATE = 8000;
+const int BUFFER_SIZE = 512;
 
 void setup() {
   // Initialize serial port
@@ -48,6 +60,9 @@ void setup() {
   delay(1000); // Give serial port some time to initialize
 
   Serial.println("\n\n----- Voice Assistant System Starting -----");
+
+  // Initialize boot button
+  pinMode(BOOT_BUTTON_PIN, INPUT_PULLUP);
 
   // Connect to WiFi network
   WiFi.mode(WIFI_STA);
@@ -74,9 +89,7 @@ void setup() {
     // INMP441 microphone will be initialized in recording function (using standard I2S mode)
 
     Serial.println("\n----- System Ready -----");
-    Serial.println("1. Enter text to chat directly with ChatGPT");
-    Serial.println("2. Enter 'TTS:text content' for speech synthesis");
-    Serial.println("3. Enter 'RECORD' to start voice recording and recognition");
+    Serial.println("Hold BOOT button to record speech, release to send to ChatGPT");
   } else {
     Serial.println("\nFailed to connect to WiFi. Please check network credentials and retry.");
   }
@@ -86,77 +99,100 @@ void loop() {
   // Handle audio loop (TTS playback)
   audio.loop();
 
-  // Handle serial commands
-  if (Serial.available() > 0) {
-    String command = Serial.readStringUntil('\n');
-    command.trim();
+  // Handle boot button for push-to-talk
+  buttonPressed = (digitalRead(BOOT_BUTTON_PIN) == LOW); // LOW when pressed (pull-up resistor)
 
-    if (command.length() > 0) {
-      if (command == "RECORD") {
-        // Start voice recording and recognition
-        startRecordingAndTranscription();
-      } else if (command.startsWith("TTS:")) {
-        // Text-to-speech command
-        String ttsText = command.substring(4);
-        ttsText.trim();
-        if (ttsText.length() > 0) {
-          ttsCall(ttsText);
-        } else {
-          Serial.println("TTS text is empty. Please use 'TTS:your text' format");
-        }
-      } else {
-        // Regular text as ChatGPT input
-        Serial.print("User: ");
-        Serial.println(command);
-        chatGptCall(command);
-      }
-    }
+  // Button pressed - start recording
+  if (buttonPressed && !wasButtonPressed && !gettingResponse && !isRecording) {
+    Serial.println("\n----- Recording Started (Hold button) -----");
+    startRealTimeRecording();
+    wasButtonPressed = true;
+    isRecording = true;
+  }
+  // Button released - stop recording and process
+  else if (!buttonPressed && wasButtonPressed && isRecording) {
+    Serial.println("\n----- Recording Stopped -----");
+    stopRecordingAndProcess();
+    wasButtonPressed = false;
+    isRecording = false;
+  }
+  // Continue recording while button is held
+  else if (buttonPressed && isRecording) {
+    continueRecording();
+  }
+  // Update button state
+  else if (!buttonPressed && !isRecording) {
+    wasButtonPressed = false;
   }
 
   delay(10); // Small delay to prevent CPU overload
 }
 
-// Start recording and send recognition result to ChatGPT
-void startRecordingAndTranscription() {
-  Serial.println("\n----- Starting Recording -----");
-  Serial.println("Please speak... (recording for " + String(RECORDING_DURATION) + " seconds)");
+// Start real-time recording
+void startRealTimeRecording() {
+  Serial.println("Speak now... (release button to stop)");
 
-  // Create I2S instance - as local variable
-  I2SClass i2s;
+  // Clear audio buffer
+  audioBuffer.clear();
 
-  // Set INMP441 microphone I2S pins (standard I2S mode)
-  i2s.setPins(I2S_MIC_SERIAL_CLOCK, I2S_MIC_LEFT_RIGHT_CLOCK, -1, I2S_MIC_SERIAL_DATA);
+  // Set INMP441 microphone I2S pins
+  recordingI2S.setPins(I2S_MIC_SERIAL_CLOCK, I2S_MIC_LEFT_RIGHT_CLOCK, -1, I2S_MIC_SERIAL_DATA);
 
-  // Initialize I2S for recording (using standard I2S mode, compatible with INMP441)
-  if (!i2s.begin(I2S_MODE_STD, 16000, I2S_DATA_BIT_WIDTH_32BIT, I2S_SLOT_MODE_MONO, I2S_STD_SLOT_LEFT)) {
+  // Initialize I2S for recording
+  if (!recordingI2S.begin(I2S_MODE_STD, SAMPLE_RATE, I2S_DATA_BIT_WIDTH_16BIT, I2S_SLOT_MODE_MONO, I2S_STD_SLOT_LEFT)) {
     Serial.println("Failed to initialize I2S!");
+    isRecording = false;
+    return;
+  }
+}
+
+// Continue recording while button is held
+void continueRecording() {
+  if (!isRecording) return;
+
+  int16_t samples[BUFFER_SIZE];
+
+  // Read audio samples
+  size_t bytesRead = recordingI2S.readBytes((char*)samples, BUFFER_SIZE * sizeof(int16_t));
+
+  if (bytesRead > 0) {
+    // Add samples to buffer
+    size_t samplesRead = bytesRead / sizeof(int16_t);
+    for (size_t i = 0; i < samplesRead; i++) {
+      audioBuffer.push_back(samples[i]);
+    }
+  }
+}
+
+// Stop recording and process audio
+void stopRecordingAndProcess() {
+  if (!isRecording) return;
+
+  // Stop I2S
+  recordingI2S.end();
+
+  if (audioBuffer.empty()) {
+    Serial.println("No audio data recorded!");
     return;
   }
 
-  // Create variables to store audio data
-  uint8_t *wav_buffer;
-  size_t wav_size;
-
-  // Record audio
-  wav_buffer = i2s.recordWAV(RECORDING_DURATION, &wav_size);
-
-  if (wav_buffer == NULL || wav_size == 0) {
-    Serial.println("Failed to record audio or buffer is empty!");
-    i2s.end(); // Close I2S
-    return;
-  }
-
-  // Close I2S immediately after recording to release resources
-  i2s.end();
-
-  Serial.println("Recording completed, size: " + String(wav_size) + " bytes");
+  Serial.println("Recording completed, samples: " + String(audioBuffer.size()));
   Serial.println("Converting speech to text...");
 
+  // Convert audio buffer to WAV format
+  uint8_t* wavBuffer = createWAVBuffer(audioBuffer.data(), audioBuffer.size());
+  size_t wavSize = calculateWAVSize(audioBuffer.size());
+
+  if (wavBuffer == nullptr) {
+    Serial.println("Failed to create WAV buffer!");
+    return;
+  }
+
   // Convert speech to text
-  String transcribedText = gptChat.speechToTextFromBuffer(wav_buffer, wav_size);
+  String transcribedText = gptChat.speechToTextFromBuffer(wavBuffer, wavSize);
 
   // Free buffer memory
-  free(wav_buffer);
+  free(wavBuffer);
 
   // Display conversion result
   if (transcribedText.length() > 0) {
@@ -169,6 +205,57 @@ void startRecordingAndTranscription() {
     Serial.println("Failed to recognize text or an error occurred.");
     Serial.println("Clear speech may not have been detected, please try again.");
   }
+}
+
+// Create WAV buffer from audio samples
+uint8_t* createWAVBuffer(int16_t* samples, size_t numSamples) {
+  size_t wavSize = calculateWAVSize(numSamples);
+  uint8_t* wavBuffer = (uint8_t*)malloc(wavSize);
+
+  if (wavBuffer == nullptr) {
+    return nullptr;
+  }
+
+  // WAV header
+  uint8_t header[44] = {
+    'R','I','F','F',  // ChunkID
+    0,0,0,0,          // ChunkSize (will be filled)
+    'W','A','V','E',  // Format
+    'f','m','t',' ',  // Subchunk1ID
+    16,0,0,0,         // Subchunk1Size
+    1,0,              // AudioFormat (PCM)
+    1,0,              // NumChannels (Mono)
+    0,0,0,0,          // SampleRate (will be filled)
+    0,0,0,0,          // ByteRate (will be filled)
+    2,0,              // BlockAlign
+    16,0,             // BitsPerSample
+    'd','a','t','a',  // Subchunk2ID
+    0,0,0,0           // Subchunk2Size (will be filled)
+  };
+
+  // Fill in the values
+  uint32_t chunkSize = wavSize - 8;
+  uint32_t sampleRate = SAMPLE_RATE;
+  uint32_t byteRate = sampleRate * 2; // 16-bit mono
+  uint32_t dataSize = numSamples * 2;
+
+  memcpy(&header[4], &chunkSize, 4);
+  memcpy(&header[24], &sampleRate, 4);
+  memcpy(&header[28], &byteRate, 4);
+  memcpy(&header[40], &dataSize, 4);
+
+  // Copy header
+  memcpy(wavBuffer, header, 44);
+
+  // Copy audio data
+  memcpy(wavBuffer + 44, samples, numSamples * 2);
+
+  return wavBuffer;
+}
+
+// Calculate WAV buffer size
+size_t calculateWAVSize(size_t numSamples) {
+  return 44 + (numSamples * 2); // Header + 16-bit samples
 }
 
 // Send message to ChatGPT
