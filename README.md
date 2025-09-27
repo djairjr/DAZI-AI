@@ -104,23 +104,20 @@ Core library files that need to be copied to Arduino's libraries folder.
 1. **Environment Setup**
    - Install Arduino IDE
    - Install ESP32 board support
-   - Install required libraries: ArduinoJson, WiFi, etc.
 
 2. **Library Installation**
-   - Copy the GPTChatLib folder to Arduino's libraries directory
-   - Install required libraries:
+   - Copy the following folders to Arduino's libraries directory:
+     - Copy `GPTChatLib` folder to `Arduino/libraries/`
+     - Copy `ESP32-audioI2S-master` folder to `Arduino/libraries/`
+   - Install additional required libraries through Arduino Library Manager:
      - ArduinoWebsoket (v0.5.4)
-     - ESP32-audioI2S-master (v3.0.13)
-       - **Note**: You need to modify the ESP32-audioI2S-master library file if you don't have an OpenAI API:
-       - Open `./ESP32-audioI2S-master/src/Audio.cpp`
-       - Find: `char host[] = "api.openai.com"`
-       - Change it to: `char host[] = "api.chatanywhere.tech"`
-     - TFT_eSPI (for display support)
-     - SPIFFS (for file system support)
+     - ArduinoJson (v7.4.1)
 
 3. **API Key Configuration**
-   - Enter your OpenAI API key in the code
-   - Update WiFi credentials (SSID and password)
+   - Open `examples/chat/chat.ino`
+   - Replace `"your-api-key"` with your actual OpenAI API key (line 50)
+   - Replace `"your-wifi-ssid"` and `"your-wifi-password"` with your WiFi credentials (lines 36-37)
+   - Optionally modify the system prompt to customize AI behavior (line 55)
 
 4. **Hardware Wiring**
    - Connect INMP441 microphone according to pin table above
@@ -129,14 +126,19 @@ Core library files that need to be copied to Arduino's libraries folder.
 
 5. **Compile and Upload**
    - Select the appropriate ESP32 development board
+     - This project has been tested on ESP32S3 Dev Module and XIAO ESP32S3
+     - Requirements: Flash Size >8M and PSRAM >4Mb
+   - In Arduino IDE, configure board settings:
+     - Partition Scheme: Select "8M with spiffs"
+     - PSRAM: Select "OPI PSRAM"
    - Compile and upload the code to your device
 
 6. **Testing**
    - Open the serial monitor
-   - Follow the prompts for voice interaction:
-     - Type text to chat with ChatGPT
-     - Use "TTS:text" for text-to-speech testing
-     - Use "RECORD" to start voice recording and recognition
+   - Hold the BOOT button on your ESP32 to start recording
+   - Speak your question or command while holding the button
+   - Release the button to send the recording to ChatGPT
+   - Listen to the AI response through your connected speaker
 
 ## 📚 Example Projects
 
@@ -144,17 +146,24 @@ Core library files that need to be copied to Arduino's libraries folder.
 This example demonstrates a complete voice interaction system with ChatGPT.
 
 **Features:**
-- Voice recording with INMP441 microphone
-- Speech-to-text conversion using OpenAI Whisper
-- ChatGPT conversation processing
-- Text-to-speech output with natural voice
-- Serial command interface for testing
+- Push-to-talk voice recording with INMP441 microphone using BOOT button
+- Speech-to-text conversion using OpenAI Whisper API
+- ChatGPT conversation processing with customizable system prompts
+- Text-to-speech output with natural voice playback
+- Real-time audio processing and I2S audio output
+- Configurable API endpoints for different OpenAI-compatible services
 
 **Usage:**
-- Type "RECORD" in serial monitor to start voice recording
-- Speak for 5 seconds (configurable)
+- Hold the BOOT button to start voice recording
+- Speak while holding the button
+- Release the button to stop recording and send to ChatGPT
 - The system will transcribe your speech and send it to ChatGPT
-- ChatGPT's response will be played back as speech
+- ChatGPT's response will be played back as speech through the speaker
+
+**Push-to-Talk Control:**
+- The system uses the ESP32's built-in BOOT button (GPIO 0) for voice control
+- Press and hold to record, release to process
+- No need to type commands in serial monitor - just use the button!
 
 ## 💬 Community
 
