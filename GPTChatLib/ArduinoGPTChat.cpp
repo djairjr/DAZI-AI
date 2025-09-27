@@ -2,8 +2,8 @@
 #include <SPIFFS.h>
 
 // Default API configuration - users can modify these or set their own via setApiConfig()
-const char* DEFAULT_API_KEY = "sk-I9DfTMZFWroj7eCIq0xuFl9uQZYNIludoEyt9pCQk3rMCNaY";
-const char* DEFAULT_API_BASE_URL = "https://api.chatanywhere.tech";
+const char* DEFAULT_API_KEY = "";
+const char* DEFAULT_API_BASE_URL = "";
 
 // Global variable for Audio library to use
 String g_api_host = "";

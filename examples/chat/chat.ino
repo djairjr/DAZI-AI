@@ -33,8 +33,8 @@
 #define I2S_SLOT_MASK I2S_STD_SLOT_LEFT
 
 // WiFi settings
-const char* ssid     = "zh";
-const char* password = "66666666";
+const char* ssid     = "your-wifi-ssid";
+const char* password = "your-wifi-password";
 
 
 
@@ -42,13 +42,14 @@ const char* password = "66666666";
 Audio audio;
 
 // Initialize ArduinoGPTChat instance
-// Option 1: Use default API key and URL from library
-ArduinoGPTChat gptChat;
+// Option 1: Use default API key and URL from library (Only support for sTEB remote Compile)
+//ArduinoGPTChat gptChat;
 
 // Option 2: Use custom API key and URL (uncomment if using custom configuration)
-// const char* apiKey = "your-api-key-here";
-// const char* apiBaseUrl = "https://your-api-server.com";
-// ArduinoGPTChat gptChat(apiKey, apiBaseUrl);
+//OpenAI apiBaseUrl : "https://api.openai.com"
+const char* apiKey = "your-api-key";
+const char* apiBaseUrl = "https://api.openai.com";
+ArduinoGPTChat gptChat(apiKey, apiBaseUrl);
 
 // System prompt configuration (modify as needed)
 const char* systemPrompt = "Please answer questions briefly, responses should not exceed 30 words. Avoid lengthy explanations, provide key information directly.";
